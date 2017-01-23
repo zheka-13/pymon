@@ -1,10 +1,10 @@
 #!/usr/bin/python
 import psutil
 import requests
-
+import socket
 
 #------------------------alert settings-------------------------
-server_name = "server"
+server_name = socket.gethostname()
 free_mem = 10  # percents
 free_cpu = 10  # percents
 free_space = 5  # percents
@@ -54,6 +54,5 @@ for proc in psutil.process_iter():
 for p in procs:
     alert_messages.append("Process " + p + " is dead")
 
-print alert_messages
 slack()
 
