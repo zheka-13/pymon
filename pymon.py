@@ -13,7 +13,7 @@ free_mem = 10  # percents
 free_cpu = 10  # percents
 free_space = 5  # percents
 procs = ['lvp', 'cron', 'apache', 'pgbouncer', 'redis', 'stun']
-webhook_url = 'https://hooks.slack.com/XXXXXXXXXXXXXXXXXXXXXXXXXXXX'
+webhook_url = 'https://hooks.slack.com/service/XXXXXXXXXXXXXXXXXXXXXXXXXXXX'
 # #---------------------------------------------------------
 metric_server = "db"
 
@@ -21,13 +21,14 @@ metric_server = "db"
 
 def slack():
     txt = ""
-    for alert in alert_messages:
-        txt = txt + alert + " on "+server_name+". \n"
-    slack_data = '{"text":"'+txt+'", "channel":"#alerts"}'
-    requests.post(
-        webhook_url, data=slack_data,
-        headers={'Content-Type': 'application/json'}
-    )
+    if (len(alert_messages)>0):
+	for alert in alert_messages:
+    	    txt = txt + alert + " on "+server_name+". \n"
+	slack_data = '{"text":"'+txt+'", "channel":"#alerts"}'
+	r = requests.post(
+    	    webhook_url, data=slack_data, timeout=2,
+    	    headers={'Content-Type': 'application/json'}
+	)
     return
 
 def send_metrics(m):
@@ -77,6 +78,8 @@ for proc in psutil.process_iter(attrs=['cmdline', 'name']):
 	    cmd = proc.info['cmdline'][0]
 	elif (len(proc.info['cmdline'])==2):
 	    cmd = proc.info['cmdline'][1]
+	elif (len(proc.info['cmdline'])==0):
+	    continue
 	else:
 	    cmd = proc.info['cmdline'][0]
 	lvp_procs['total'] +=1
@@ -106,5 +109,5 @@ for p in procs:
     alert_messages.append("Process " + p + " is dead")
 
 print alert_messages
-slack()
 send_metrics(metrics)
+slack()
