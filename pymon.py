@@ -4,19 +4,22 @@ import requests
 import socket
 import time
 import sys
+import os
+import psycopg2
+from datetime import datetime
 
 #------------------------alert settings-------------------------
-CARBON_SERVER = 'carbon.example.net'
+CARBON_SERVER = ''
 CARBON_PORT = 2003
 server_name = socket.gethostname()
 free_mem = 10  # percents
 free_cpu = 10  # percents
 free_space = 5  # percents
 procs = ['lvp', 'cron', 'apache', 'pgbouncer', 'redis', 'stun']
-webhook_url = 'https://hooks.slack.com/service/XXXXXXXXXXXXXXXXXXXXXXXXXXXX'
+webhook_url = 'https://hooks.slack.com/services/'
 # #---------------------------------------------------------
 metric_server = "db"
-
+node = "1.1.1.1"
 
 
 def slack():
@@ -94,7 +97,7 @@ for proc in psutil.process_iter(attrs=['cmdline', 'name']):
 
 metrics.append("host."+metric_server+".procs.total "+str(lvp_procs['total']))
 metrics.append("host."+metric_server+".procs.calls "+str(lvp_procs['calls']))
-
+metrics.append("host."+metric_server+".procs.op "+str(lvp_procs['op']))
 
 for proc in psutil.process_iter():
     try:
@@ -107,6 +110,19 @@ for proc in psutil.process_iter():
                 procs.remove(p)
 for p in procs:
     alert_messages.append("Process " + p + " is dead")
+
+lst = os.listdir("/home/lvp/wav") # dir is your directory path
+number_files = len(lst)
+metrics.append("host."+metric_server+".files.wav "+str(number_files))
+
+conn = psycopg2.connect("host=127.0.0.1 port=5432 dbname= user=")
+cur = conn.cursor()
+cur.execute("select count(distinct(session_id)) as cnt from log_calls_"+str(datetime.now().month)+"_"+
+    str(datetime.now().year)+" where (ip_from='"+node+"' or ip_to='"+node+"') and connect_time>now()-'1 minute'::interval")
+row = cur.fetchone()
+cur.close()
+conn.close()
+metrics.append("host."+metric_server+".calls_per_minute "+str(row[0]))
 
 print alert_messages
 send_metrics(metrics)
