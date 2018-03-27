@@ -90,7 +90,8 @@ cur = conn.cursor()
 cur.execute("SELECT count(*) as cnt, state FROM pg_stat_activity group by state")
 row = cur.fetchone()
 while row is not None:
-    metrics.append("host."+metric_server+".conns."+row[1].replace(" ", "_")+" "+str(row[0]))
+    if row[1] is not None:
+	metrics.append("host."+metric_server+".conns."+row[1].replace(" ", "_")+" "+str(row[0]))
     row = cur.fetchone()
 cur.execute("SELECT pg_xlog_location_diff(sent_location, replay_location) AS byte_lag FROM pg_stat_replication")
 row = cur.fetchone()
