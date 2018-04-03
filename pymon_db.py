@@ -97,7 +97,7 @@ cur.execute("SELECT pg_xlog_location_diff(sent_location, replay_location) AS byt
 row = cur.fetchone()
 metrics.append("host."+metric_server+".lag "+str(row[0]))
 timestamp = int(time.time())
-cur.execute("select sum(xact_commit + xact_rollback), sum(tup_inserted), sum(tup_updated), sum(tup_deleted) from pg_stat_database")
+cur.execute("select sum(xact_commit + xact_rollback), sum(tup_inserted), sum(tup_updated), sum(tup_deleted), sum(tup_fetched) from pg_stat_database")
 row = cur.fetchone()
 if os.path.isfile("data.json"):
     f = open('data.json', 'r')
@@ -109,8 +109,9 @@ if os.path.isfile("data.json"):
 	metrics.append("host."+metric_server+".inserts "+str(row[1]-int(data[2])))
 	metrics.append("host."+metric_server+".updates "+str(row[2]-int(data[3])))
 	metrics.append("host."+metric_server+".deletes "+str(row[3]-int(data[4])))
+	metrics.append("host."+metric_server+".selects "+str(row[4]-int(data[5])))
 f = open('data.json', 'w')
-f.write(str(timestamp)+":"+str(row[0])+":"+str(row[1])+":"+str(row[2])+":"+str(row[3]))
+f.write(str(timestamp)+":"+str(row[0])+":"+str(row[1])+":"+str(row[2])+":"+str(row[3])+":"+str(row[4]))
 f.close() 
 
 cur.close()
