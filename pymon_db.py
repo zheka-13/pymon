@@ -16,9 +16,9 @@ free_mem = 10  # percents
 free_cpu = 10  # percents
 free_space = 5  # percents
 procs = ['postmaster']
-webhook_url = 'https://hooks.slack.com'
+webhook_url = 'https://hooks.slack.com/services/'
 # #---------------------------------------------------------
-metric_server = "db"
+metric_server = "other_db"
 
 
 def slack():
@@ -48,7 +48,7 @@ def send_metrics(m):
 
 metrics = []
 alert_messages = []
-conn = psycopg2.connect("host=127.0.0.1 port=5432 dbname=postgres user=postgres")
+conn = psycopg2.connect("host=127.0.0.1 port=5432 dbname= user=postgres")
 
 cpu_data =  psutil.cpu_times_percent(interval=1)
 metrics.append("host."+metric_server+".cpu.user "+str(cpu_data.user))
@@ -59,7 +59,7 @@ cpus = psutil.cpu_percent(interval=1, percpu=True)
 for cpu in cpus:
     if cpu >= (100 - free_cpu):
         alert_messages.append("One of CPU cores usage is " + str(cpu) + "%")
-    if cpu>80:
+    """if cpu>80:
 	cur2 = conn.cursor()
 	cur2.execute("select query_start, waiting, query, pid, state, now()-query_start from pg_stat_activity where state='active' order by query_start asc")
 	row2 = cur2.fetchone()
@@ -71,7 +71,7 @@ for cpu in cpus:
 	f = open('/tmp/'+fname, 'w')
 	f.write(_file_stat+"\n")
 	f.close()
-	cur2.close()
+	cur2.close()"""
 
 mem = psutil.virtual_memory()
 metrics.append("host."+metric_server+".memory.used "+str(mem.percent))
@@ -109,7 +109,7 @@ row = cur.fetchone()
 while row is not None:
     if row[1] is not None:
 	metrics.append("host."+metric_server+".conns."+row[1].replace(" ", "_")+" "+str(row[0]))
-    if row[0]>50 and row[1] == "active" :
+    """if row[0]>50 and row[1] == "active" :
 	cur2 = conn.cursor()
 	cur2.execute("select query_start, waiting, query, pid, state, now()-query_start from pg_stat_activity where state='active' order by query_start asc")
 	row2 = cur2.fetchone()
@@ -126,13 +126,19 @@ while row is not None:
 	f = open('/tmp/'+fname, 'w')
 	f.write(_file_stat+"\n")
 	f.close()
-	cur2.close()
+	cur2.close()"""
     row = cur.fetchone()
 cur.execute("SELECT pg_xlog_location_diff(sent_location, replay_location) AS byte_lag FROM pg_stat_replication")
 row = cur.fetchone()
 metrics.append("host."+metric_server+".lag "+str(row[0]))
+cur.execute("SELECT sum(n_dead_tup) FROM pg_stat_user_tables WHERE n_dead_tup > 0")
+row = cur.fetchone()
+metrics.append("host."+metric_server+".dead_tup "+str(row[0]))
+
 timestamp = int(time.time())
-cur.execute("select sum(xact_commit + xact_rollback), sum(tup_inserted), sum(tup_updated), sum(tup_deleted), sum(tup_fetched), sum(tup_returned) from pg_stat_database")
+cur.execute("select sum(xact_commit + xact_rollback), sum(tup_inserted), sum(tup_updated), sum(tup_deleted), \
+    sum(tup_fetched), sum(tup_returned), \
+    sum(blk_read_time), sum(blk_write_time) from pg_stat_database")
 row = cur.fetchone()
 if os.path.isfile("/srv/data.json"):
     f = open('/srv/data.json', 'r')
@@ -144,8 +150,10 @@ if os.path.isfile("/srv/data.json"):
 	metrics.append("host."+metric_server+".inserts "+str(row[1]-int(data[2])))
 	metrics.append("host."+metric_server+".updates "+str(row[2]-int(data[3])))
 	metrics.append("host."+metric_server+".deletes "+str(row[3]-int(data[4])))
-	metrics.append("host."+metric_server+".selects "+str(row[4]-int(data[5])))
-	metrics.append("host."+metric_server+".returned "+str(row[5]-int(data[6])))
+	metrics.append("host."+metric_server+".tup_fetched "+str(row[4]-int(data[5])))
+	metrics.append("host."+metric_server+".tup_returned "+str(row[5]-int(data[6])))
+    metrics.append("host."+metric_server+".blk_read_time "+str(row[6]))
+    metrics.append("host."+metric_server+".blk_write_time "+str(row[7]))
 f = open('/srv/data.json', 'w')
 f.write(str(timestamp)+":"+str(row[0])+":"+str(row[1])+":"+str(row[2])+":"+str(row[3])+":"+str(row[4])+":"+str(row[5]))
 f.close() 
