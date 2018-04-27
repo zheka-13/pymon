@@ -15,11 +15,10 @@ server_name = socket.gethostname()
 free_mem = 10  # percents
 free_cpu = 10  # percents
 free_space = 5  # percents
-procs = ['lvp', 'cron', 'apache', 'pgbouncer', 'redis', 'stun']
+procs = ['postmaster']
 webhook_url = 'https://hooks.slack.com/services/'
 # #---------------------------------------------------------
 metric_server = "db"
-node = "1.1.1.1"
 
 
 def slack():
@@ -49,6 +48,7 @@ def send_metrics(m):
 
 metrics = []
 alert_messages = []
+conn = psycopg2.connect("host=127.0.0.1 port=5432 dbname=acd user=postgres")
 
 cpu_data =  psutil.cpu_times_percent(interval=1)
 metrics.append("host."+metric_server+".cpu.user "+str(cpu_data.user))
@@ -59,6 +59,19 @@ cpus = psutil.cpu_percent(interval=1, percpu=True)
 for cpu in cpus:
     if cpu >= (100 - free_cpu):
         alert_messages.append("One of CPU cores usage is " + str(cpu) + "%")
+    """if cpu>80:
+	cur2 = conn.cursor()
+	cur2.execute("select query_start, waiting, query, pid, state, now()-query_start from pg_stat_activity where state='active' order by query_start asc")
+	row2 = cur2.fetchone()
+	fname = time.strftime("procs_%d_%b_%Y_%H_%M_%S.log", time.gmtime())
+	_file_stat = "";
+	while row2 is not None:
+	    _file_stat = _file_stat + str(row2[5]) + ' ' + str(row2[3]) +' '+str(row2[4])+' '+str(row2[1])+' ' +str(row2[2])+"\n"
+	    row2 = cur2.fetchone()
+	f = open('/tmp/'+fname, 'w')
+	f.write(_file_stat+"\n")
+	f.close()
+	cur2.close()"""
 
 mem = psutil.virtual_memory()
 metrics.append("host."+metric_server+".memory.used "+str(mem.percent))
@@ -69,35 +82,14 @@ if mem.available*100/mem.total <= free_mem:
 disks = psutil.disk_partitions()
 for disk in disks:
     disk_usage = psutil.disk_usage(disk.mountpoint)
+    if (disk.mountpoint=="/usr"):
+	metrics.append("host."+metric_server+".disk.usr.used "+str(disk_usage.percent))
+    if (disk.mountpoint=="/var"):
+	metrics.append("host."+metric_server+".disk.var.used "+str(disk_usage.percent))
     if (100 - disk_usage.percent) <= free_space:
         alert_messages.append("Partition " + str(disk.mountpoint) + " has " +
             str(100 - disk_usage.percent) + "% free space left")
 
-
-lvp_procs = {'total' : 0, 'op' : 0, 'dlr' : 0, 'calls' : 0}
-for proc in psutil.process_iter(attrs=['cmdline', 'name']):
-    if proc.info['name'] == 'lvp':
-	if (len(proc.info['cmdline'])==1):
-	    cmd = proc.info['cmdline'][0]
-	elif (len(proc.info['cmdline'])==2):
-	    cmd = proc.info['cmdline'][1]
-	elif (len(proc.info['cmdline'])==0):
-	    continue
-	else:
-	    cmd = proc.info['cmdline'][0]
-	lvp_procs['total'] +=1
-	if "WM_Conn" in cmd:
-	    lvp_procs['op'] +=1
-	elif "#comp" in cmd:
-	    lvp_procs['dlr'] +=1
-	elif "lvp_" in cmd:
-	    continue 
-	else:
-	    lvp_procs['calls'] +=1
-
-metrics.append("host."+metric_server+".procs.total "+str(lvp_procs['total']))
-metrics.append("host."+metric_server+".procs.calls "+str(lvp_procs['calls']))
-metrics.append("host."+metric_server+".procs.op "+str(lvp_procs['op']))
 
 for proc in psutil.process_iter():
     try:
@@ -111,19 +103,75 @@ for proc in psutil.process_iter():
 for p in procs:
     alert_messages.append("Process " + p + " is dead")
 
-lst = os.listdir("/home/lvp/wav") # dir is your directory path
-number_files = len(lst)
-metrics.append("host."+metric_server+".files.wav "+str(number_files))
-
-conn = psycopg2.connect("host=127.0.0.1 port=5432 dbname= user=")
 cur = conn.cursor()
-cur.execute("select count(distinct(session_id)) as cnt from log_calls_"+str(datetime.now().month)+"_"+
-    str(datetime.now().year)+" where (ip_from='"+node+"' or ip_to='"+node+"') and connect_time>now()-'1 minute'::interval")
+cur.execute("SELECT count(*) as cnt, state FROM pg_stat_activity group by state")
 row = cur.fetchone()
+while row is not None:
+    if row[1] is not None:
+	metrics.append("host."+metric_server+".conns."+row[1].replace(" ", "_")+" "+str(row[0]))
+    """if row[0]>50 and row[1] == "active" :
+	cur2 = conn.cursor()
+	cur2.execute("select query_start, waiting, query, pid, state, now()-query_start from pg_stat_activity where state='active' order by query_start asc")
+	row2 = cur2.fetchone()
+	fname = time.strftime("procs_%d_%b_%Y_%H_%M_%S.log", time.gmtime())
+	_file_stat = "";
+	_stat = time.strftime("[%a, %d %b %Y %H:%M:%S +0000]", time.gmtime())+" =================================================\n"
+	while row2 is not None:
+	    _stat = _stat + str(row2[0]) + ' ' +str(row2[1])+' ' +str(row2[2])+"\n"
+	    _file_stat = _file_stat + str(row2[5]) + ' ' + str(row2[3]) +' '+str(row2[4])+' '+str(row2[1])+' ' +str(row2[2])+"\n"
+	    row2 = cur2.fetchone()
+	f = open('/srv/procs.log', 'a')
+	f.write(_stat+"\n")
+	f.close()
+	f = open('/tmp/'+fname, 'w')
+	f.write(_file_stat+"\n")
+	f.close()
+	cur2.close()"""
+    row = cur.fetchone()
+cur.execute("SELECT pg_xlog_location_diff(sent_location, replay_location) AS byte_lag FROM pg_stat_replication")
+row = cur.fetchone()
+metrics.append("host."+metric_server+".lag "+str(row[0]))
+cur.execute("SELECT sum(n_dead_tup) FROM pg_stat_user_tables WHERE n_dead_tup > 0")
+row = cur.fetchone()
+metrics.append("host."+metric_server+".dead_tup "+str(row[0]))
+disk_usage = psutil.disk_io_counters()
+timestamp = int(time.time())
+cur.execute("select sum(xact_commit + xact_rollback), sum(tup_inserted), sum(tup_updated), sum(tup_deleted), \
+    sum(tup_fetched), sum(tup_returned), \
+    sum(blk_read_time), sum(blk_write_time) from pg_stat_database")
+row = cur.fetchone()
+if os.path.isfile("/srv/data.json"):
+    f = open('/srv/data.json', 'r')
+    s = f.read();
+    data  = s.split(":")
+    f.close()
+    if ((timestamp - int(data[0]))<120):
+	metrics.append("host."+metric_server+".transactions "+str(row[0]-int(data[1])))
+	metrics.append("host."+metric_server+".inserts "+str(row[1]-int(data[2])))
+	metrics.append("host."+metric_server+".updates "+str(row[2]-int(data[3])))
+	metrics.append("host."+metric_server+".deletes "+str(row[3]-int(data[4])))
+	metrics.append("host."+metric_server+".tup_fetched "+str(row[4]-int(data[5])))
+	metrics.append("host."+metric_server+".tup_returned "+str(row[5]-int(data[6])))
+	metrics.append("host."+metric_server+".blk_read_time "+str(row[6]))
+	metrics.append("host."+metric_server+".blk_write_time "+str(row[7]))
+
+	metrics.append("host."+metric_server+".disk.read_count "+str(disk_usage.read_count-int(data[7])))
+	metrics.append("host."+metric_server+".disk.write_count "+str(disk_usage.write_count-int(data[8])))
+	metrics.append("host."+metric_server+".disk.read_bytes "+str(disk_usage.read_bytes-int(data[9])))
+	metrics.append("host."+metric_server+".disk.write_bytes "+str(disk_usage.write_bytes-int(data[10])))
+	metrics.append("host."+metric_server+".disk.read_time "+str(disk_usage.read_time-int(data[11])))
+	metrics.append("host."+metric_server+".disk.write_time "+str(disk_usage.write_time-int(data[12])))
+	metrics.append("host."+metric_server+".disk.busy_time "+str(disk_usage.busy_time-int(data[13])))
+f = open('/srv/data.json', 'w')
+f.write(str(timestamp)+":"+str(row[0])+":"+str(row[1])+":"+str(row[2])+":"+str(row[3])+":"+str(row[4])+":"+str(row[5])+
+    ":"+str(disk_usage.read_count)+":"+str(disk_usage.write_count)+":"+str(disk_usage.read_bytes)+":"+str(disk_usage.write_bytes)+
+    ":"+str(disk_usage.read_time)+":"+str(disk_usage.write_time)+":"+str(disk_usage.busy_time))
+f.close() 
+
 cur.close()
 conn.close()
-metrics.append("host."+metric_server+".calls_per_minute "+str(row[0]))
 
-print alert_messages
+#print metrics
 send_metrics(metrics)
 slack()
+
