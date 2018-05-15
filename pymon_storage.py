@@ -12,8 +12,8 @@ server_name = socket.gethostname()
 free_mem = 10  # percents
 free_cpu = 10  # percents
 free_space = 5  # percents
-procs = ['lvp', 'cron', 'apache', 'pgbouncer', 'redis', 'stun']
-webhook_url = 'https://hooks.slack.com/services'
+procs = ['cron', 'apache', 'pgbouncer']
+webhook_url = 'https://'
 # #---------------------------------------------------------
 metric_server = "storage"
 
@@ -65,6 +65,9 @@ for disk in disks:
         alert_messages.append("Partition " + str(disk.mountpoint) + " has " +
             str(100 - disk_usage.percent) + "% free space left")
 
+box = psutil.disk_usage('/srv/box')
+metrics.append("host."+metric_server+".disk.used "+str(box.percent))
+
 wavs = 0
 for filename in os.listdir("/srv/box/from_lira"):
     if os.path.isdir("/srv/box/from_lira/"+str(filename)):
@@ -73,9 +76,12 @@ for filename in os.listdir("/srv/box/from_lira"):
 
 lst = os.listdir("/srv/box/to_drive")
 to_drive = len(lst)
+lst2 = os.listdir("/srv/box/to_drive_errors")
+to_drive_errors = len(lst2)
+
 metrics.append("host."+metric_server+".files.wav "+str(wavs))
 metrics.append("host."+metric_server+".files.files_to_upload "+str(to_drive))
-
+metrics.append("host."+metric_server+".files.files_to_upload_errors "+str(to_drive_errors))
 
 #print alert_messages
 #print metrics
